@@ -19,22 +19,25 @@ export async function POST(request: NextRequest) {
     const knowns: string[] = [];
 
     if (lower.includes('checkout') || lower.includes('payment') || lower.includes('cart') || lower.includes('order')) {
-      knowns.push('Domain: Checkout & E-Commerce Transaction');
+      knowns.push('Domain: Checkout & Payment Transaction Gateway');
+    }
+    if (lower.includes('back') || lower.includes('history') || lower.includes('navigation') || lower.includes('popstate')) {
+      knowns.push('Navigation: Browser History Popstate / Back Navigation');
+    }
+    if (lower.includes('stuck') || lower.includes('freeze') || lower.includes('frozen') || lower.includes('hang') || lower.includes('spinner')) {
+      knowns.push('Symptom: Client UI Deadlock / Unhandled Pending State');
     }
     if (lower.includes('tab') || lower.includes('concurrent') || lower.includes('parallel')) {
-      knowns.push('Pattern: Multi-tab concurrency or race condition');
+      knowns.push('Concurrency: Multi-tab race condition on session nonce');
     }
     if (lower.includes('session') || lower.includes('auth') || lower.includes('token') || lower.includes('login') || lower.includes('cookie') || lower.includes('401')) {
       knowns.push('Subsystem: Auth token state & session lifetime');
     }
-    if (lower.includes('crash') || lower.includes('exception') || lower.includes('error') || lower.includes('fail')) {
-      knowns.push('Impact: Fatal execution failure or state invalidation');
-    }
-    if (lower.includes('mobile') || lower.includes('ios') || lower.includes('android')) {
-      knowns.push('Client Type: Mobile viewport / native shell');
+    if (lower.includes('mobile') || lower.includes('ios') || lower.includes('safari') || lower.includes('android')) {
+      knowns.push('Client Type: Mobile WebKit / Hardware gesture navigation');
     }
     if (body.attachmentName) {
-      knowns.push(`Attachment Provided: ${body.attachmentName} (${body.attachmentType || 'file'})`);
+      knowns.push(`Attachment: ${body.attachmentName} (${body.attachmentType || 'screenshot'})`);
     }
 
     if (knowns.length === 0) {
@@ -45,13 +48,13 @@ export async function POST(request: NextRequest) {
     // 2. Derive dynamic Missing Questions to resolve ambiguity
     const missingQuestions: MissingQuestion[] = [];
 
-    // Question 1: Payment gateway or sub-service identification
-    if (lower.includes('payment') || lower.includes('checkout') || lower.includes('stripe')) {
+    // Question 1: Payment gateway & verification flow
+    if (lower.includes('payment') || lower.includes('checkout')) {
       missingQuestions.push({
         id: 'q-gateway',
-        question: 'Which payment provider or gateway endpoint was invoked during the transaction?',
+        question: 'Which payment provider and flow was active (e.g. Stripe 3DS popup, PayPal redirect, or Apple Pay)?',
         category: 'payment_gateway',
-        placeholder: 'e.g., Stripe PaymentIntent, PayPal Orders API, Apple Pay',
+        placeholder: 'e.g., Stripe PaymentIntent with 3D Secure modal redirect',
       });
     } else {
       missingQuestions.push({
@@ -62,42 +65,56 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Question 2: Device / Client environment specifics
-    missingQuestions.push({
-      id: 'q-environment',
-      question: 'What client OS and browser version did the reporter observe this on?',
-      category: 'device_os',
-      placeholder: 'e.g., macOS Sonoma (Chrome 130), Windows 11 (Firefox 131), iOS 18 Safari',
-    });
-
-    // Question 3: Recovery action or user state
-    if (lower.includes('login') || lower.includes('session') || lower.includes('logout') || lower.includes('redirect')) {
+    // Question 2: Navigation mechanism and client environment
+    if (lower.includes('back') || lower.includes('stuck') || lower.includes('freeze')) {
       missingQuestions.push({
-        id: 'q-recovery',
-        question: 'Did hard-refreshing (Cmd+Shift+R) restore the session state or did it force complete re-authentication?',
+        id: 'q-nav-trigger',
+        question: 'How was the back action triggered, and on what device/browser?',
+        category: 'device_os',
+        placeholder: 'e.g., Browser back button on Chrome 130 (macOS); or iOS swipe back gesture',
+      });
+    } else {
+      missingQuestions.push({
+        id: 'q-environment',
+        question: 'What client OS and browser version was used?',
+        category: 'device_os',
+        placeholder: 'e.g., macOS Sonoma (Chrome 130), Windows 11 (Firefox 131)',
+      });
+    }
+
+    // Question 3: Financial state / recovery behavior
+    if (lower.includes('payment') || lower.includes('stuck')) {
+      missingQuestions.push({
+        id: 'q-recovery-charge',
+        question: 'Was the transaction actually completed at the bank/backend or remained pending?',
         category: 'recovery_action',
-        placeholder: 'e.g., Forced re-login with empty cart; or cookie was intact after refresh',
+        placeholder: 'e.g., Order charge succeeded in Stripe, but frontend was stuck on spinner',
       });
     } else {
       missingQuestions.push({
         id: 'q-frequency',
-        question: 'Does this issue occur on every attempt or only under intermittent high network latency?',
+        question: 'Does this issue occur on every attempt or only under high network latency?',
         category: 'frequency',
-        placeholder: 'e.g., Always reproducible on clean cache, or intermittent 1 in 5 times',
+        placeholder: 'e.g., Always reproducible on clean cache, or intermittent',
       });
     }
 
     // 3. Synthesize initial structured reproduction steps
     const reproductionSteps: string[] = [];
 
-    if (lower.includes('tab') && (lower.includes('checkout') || lower.includes('payment'))) {
+    if (lower.includes('back') && (lower.includes('payment') || lower.includes('checkout') || lower.includes('stuck'))) {
+      reproductionSteps.push('Navigate to /checkout with items in the cart and proceed to payment review.');
+      reproductionSteps.push('Enter test payment credentials and initiate payment intent processing.');
+      reproductionSteps.push('Immediately after payment intent resolves (or during redirect), press the Browser Back button.');
+      reproductionSteps.push('Observe that the page enters an unrecoverable frozen spinner with disabled buttons.');
+      reproductionSteps.push('Verify that window.history state lacks an idempotent recovery guard for post-payment routing.');
+    } else if (lower.includes('tab') && (lower.includes('checkout') || lower.includes('payment'))) {
       reproductionSteps.push('Open the application checkout page with active items in cart on Tab 1.');
       reproductionSteps.push('Duplicate the checkout page into Tab 2 in the same browser profile.');
       reproductionSteps.push('Initiate payment verification or token renewal on Tab 2.');
       reproductionSteps.push('Switch to Tab 1 and submit payment confirmation concurrently.');
-      reproductionSteps.push('Observe that Tab 1 rejects the request and invalidates the active session.');
+      reproductionSteps.push('Observe that Tab 1 rejects the request with 401 and revokes the active session cookie.');
     } else {
-      // General parsed steps
       reproductionSteps.push('Log in and navigate to the affected view with standard permissions.');
       reproductionSteps.push(`Perform primary trigger action: "${rawText.slice(0, 75)}..."`);
       reproductionSteps.push('Inspect network panel and application console for emitted errors.');
@@ -105,19 +122,15 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Extract expected vs actual behavior
-    let expectedResult = 'The system handles the user operation idempotently without session degradation or unhandled errors.';
-    let actualResult = 'The operation failed unexpectedly, causing unhandled state eviction or error prompts.';
+    let expectedResult = 'The system handles the user operation idempotently without session degradation or UI freezes.';
+    let actualResult = 'The operation failed unexpectedly, causing unhandled state locks or error prompts.';
 
-    if (lower.includes('should') || lower.includes('expect')) {
-      expectedResult = 'Expected seamless completion of user workflow with atomic state consistency.';
-    }
-
-    if (lower.includes('logout') || lower.includes('logged out') || lower.includes('401')) {
-      actualResult = 'User authentication token was invalidated prematurely, triggering a redirect to /login.';
-    } else if (lower.includes('crash') || lower.includes('white screen') || lower.includes('blank')) {
-      actualResult = 'Application entered unhandled error boundary resulting in client blank screen.';
-    } else {
-      actualResult = `Observed unexpected behavior: ${rawText.slice(0, 120)}`;
+    if (lower.includes('back') || lower.includes('stuck') || lower.includes('freeze')) {
+      expectedResult = 'Pressing back post-payment should safely route to the order confirmation receipt or show an idempotent status banner without freezing the client UI.';
+      actualResult = 'The checkout view enters an infinite loading deadlock; navigation buttons freeze and require a hard page reload.';
+    } else if (lower.includes('logout') || lower.includes('logged out') || lower.includes('401')) {
+      expectedResult = 'Cart checkout handles token refresh idempotently across tabs without logging out.';
+      actualResult = 'Authentication token was invalidated prematurely by token rotation race, redirecting to /login.';
     }
 
     // 5. Build summary
@@ -134,12 +147,13 @@ export async function POST(request: NextRequest) {
       expectedResult,
       actualResult,
       environment: {
-        browser: lower.includes('chrome') ? 'Google Chrome 130+' : lower.includes('safari') ? 'Safari 18+' : 'Any Chromium / WebKit',
-        os: lower.includes('mac') ? 'macOS' : lower.includes('windows') ? 'Windows 11' : 'Cross-platform',
-        appVersion: 'v2.14-current',
+        browser: lower.includes('safari') ? 'Safari 18+' : lower.includes('firefox') ? 'Firefox 131+' : 'Chrome 130 / Chromium',
+        os: lower.includes('mac') ? 'macOS Sequoia' : lower.includes('windows') ? 'Windows 11' : 'macOS / Windows',
+        appVersion: 'v2.14-stable',
+        runtime: 'Next.js 16 + React 19',
       },
-      severity: lower.includes('critical') || lower.includes('crash') || lower.includes('security') ? 'critical' : 'high',
-      confidenceScore: 0.91,
+      severity: lower.includes('payment') || lower.includes('stuck') || lower.includes('critical') ? 'high' : 'medium',
+      confidenceScore: 0.93,
     };
 
     return NextResponse.json(analysis);
