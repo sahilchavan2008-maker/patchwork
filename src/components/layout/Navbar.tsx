@@ -1,0 +1,122 @@
+'use client';
+
+import React from 'react';
+import { Badge } from '@/components/ui/Badge';
+import { Bug, Sparkles, FileCode2, Layers } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+export type WorkflowStep = 'intake' | 'clarification' | 'report';
+
+interface NavbarProps {
+  currentStep: WorkflowStep;
+  onStepChange: (step: WorkflowStep) => void;
+  clarificationCount?: number;
+  isReportReady?: boolean;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
+  currentStep,
+  onStepChange,
+  clarificationCount = 0,
+  isReportReady = false,
+}) => {
+  const steps = [
+    {
+      id: 'intake' as WorkflowStep,
+      label: 'Bug Intake',
+      icon: Bug,
+      detail: 'Capture & Context',
+    },
+    {
+      id: 'clarification' as WorkflowStep,
+      label: 'Ambiguity Resolution',
+      icon: Sparkles,
+      detail: clarificationCount > 0 ? `${clarificationCount} queries` : 'Resolved',
+      badge: clarificationCount > 0 ? `${clarificationCount}` : undefined,
+    },
+    {
+      id: 'report' as WorkflowStep,
+      label: 'Developer Report',
+      icon: FileCode2,
+      detail: isReportReady ? 'Ready for Fix' : 'Pending',
+    },
+  ];
+
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        {/* Brand */}
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/20">
+            <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center">
+              <Layers className="w-5 h-5 text-cyan-400" />
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg font-bold tracking-tight text-white">
+                patch<span className="text-cyan-400">work</span>
+              </span>
+              <Badge variant="indigo" size="sm">
+                v1.0 Architecture
+              </Badge>
+            </div>
+            <p className="text-[11px] text-slate-400 font-mono hidden sm:block">
+              Intelligent Bug Clarification & Analysis
+            </p>
+          </div>
+        </div>
+
+        {/* Workflow Pipeline Nav */}
+        <nav className="flex items-center space-x-1 sm:space-x-2 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
+          {steps.map((step, idx) => {
+            const Icon = step.icon;
+            const isActive = currentStep === step.id;
+
+            return (
+              <button
+                key={step.id}
+                onClick={() => onStepChange(step.id)}
+                className={cn(
+                  'flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150',
+                  isActive
+                    ? 'bg-slate-800 text-white shadow-inner border border-slate-700/80 shadow-indigo-500/10'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                )}
+              >
+                <div
+                  className={cn(
+                    'w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold font-mono',
+                    isActive ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                  )}
+                >
+                  {idx + 1}
+                </div>
+                <Icon
+                  className={cn(
+                    'w-3.5 h-3.5',
+                    isActive ? (step.id === 'clarification' ? 'text-cyan-400' : 'text-indigo-400') : 'text-slate-500'
+                  )}
+                />
+                <span className="hidden md:inline">{step.label}</span>
+                {step.badge && (
+                  <span className="ml-1 px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-800 rounded-full text-[10px] font-mono">
+                    {step.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* High-contrast status pill */}
+        <div className="hidden lg:flex items-center space-x-2">
+          <div className="flex items-center space-x-2 text-xs font-mono text-slate-400 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Engine: <strong className="text-slate-200">Online</strong></span>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
