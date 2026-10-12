@@ -4,6 +4,8 @@ export interface RawReport {
   rawText: string;
   attachmentType?: AttachmentType;
   attachmentName?: string;
+  attachmentSize?: string;
+  attachmentPreview?: string;
 }
 
 export interface MissingQuestion {

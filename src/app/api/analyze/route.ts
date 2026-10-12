@@ -4,16 +4,28 @@ import { RawReport, BugAnalysis, MissingQuestion } from '@/types/bug';
 export async function POST(request: NextRequest) {
   try {
     const body: RawReport = await request.json();
-    const rawText = body.rawText ? body.rawText.trim() : '';
+    let rawText = body.rawText ? body.rawText.trim() : '';
+
+    // If rawText is blank but an attachment is present, formulate analysis context from the artifact
+    if (!rawText && body.attachmentName) {
+      if (body.attachmentType === 'har' || body.attachmentName.toLowerCase().endsWith('.har')) {
+        rawText = `Analysis of attached network trace ${body.attachmentName}: Inspecting client-server HTTP transactions, payload mutations, and failed status responses.`;
+      } else if (body.attachmentType === 'log' || body.attachmentName.toLowerCase().endsWith('.log')) {
+        rawText = `Analysis of attached server/client log dump ${body.attachmentName}: Examining stack traces, uncaught exceptions, and error severity.`;
+      } else {
+        rawText = `Analysis of attached diagnostic artifact ${body.attachmentName} (${body.attachmentType || 'file'}).`;
+      }
+    }
 
     if (!rawText) {
       return NextResponse.json(
-        { error: 'rawText is required to perform bug analysis.' },
+        { error: 'Please enter a bug description or drop a log/screenshot attachment to proceed with analysis.' },
         { status: 400 }
       );
     }
 
     const lower = rawText.toLowerCase();
+    const attachLower = (body.attachmentName || '').toLowerCase();
 
     // 1. Extract Knowns based on heuristic detection
     const knowns: string[] = [];
@@ -36,8 +48,18 @@ export async function POST(request: NextRequest) {
     if (lower.includes('mobile') || lower.includes('ios') || lower.includes('safari') || lower.includes('android')) {
       knowns.push('Client Type: Mobile WebKit / Hardware gesture navigation');
     }
+
+    // Attachment specific knowns
     if (body.attachmentName) {
-      knowns.push(`Attachment: ${body.attachmentName} (${body.attachmentType || 'screenshot'})`);
+      const typeLabel = body.attachmentType || 'file';
+      knowns.push(`Attachment: ${body.attachmentName} (${typeLabel}${body.attachmentSize ? ` - ${body.attachmentSize}` : ''})`);
+
+      if (attachLower.includes('.har') || body.attachmentType === 'har') {
+        knowns.push('Network Telemetry: HAR capture attached (contains HTTP headers, request timings & status codes)');
+      }
+      if (attachLower.includes('.log') || body.attachmentType === 'log') {
+        knowns.push('Diagnostic Logs: Stack trace file attached with execution timestamps');
+      }
     }
 
     if (knowns.length === 0) {
@@ -49,7 +71,7 @@ export async function POST(request: NextRequest) {
     const missingQuestions: MissingQuestion[] = [];
 
     // Question 1: Payment gateway & verification flow
-    if (lower.includes('payment') || lower.includes('checkout')) {
+    if (lower.includes('payment') || lower.includes('checkout') || attachLower.includes('checkout')) {
       missingQuestions.push({
         id: 'q-gateway',
         question: 'Which payment provider and flow was active (e.g. Stripe 3DS popup, PayPal redirect, or Apple Pay)?',
@@ -83,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Question 3: Financial state / recovery behavior
-    if (lower.includes('payment') || lower.includes('stuck')) {
+    if (lower.includes('payment') || lower.includes('stuck') || lower.includes('har')) {
       missingQuestions.push({
         id: 'q-recovery-charge',
         question: 'Was the transaction actually completed at the bank/backend or remained pending?',
@@ -114,6 +136,15 @@ export async function POST(request: NextRequest) {
       reproductionSteps.push('Initiate payment verification or token renewal on Tab 2.');
       reproductionSteps.push('Switch to Tab 1 and submit payment confirmation concurrently.');
       reproductionSteps.push('Observe that Tab 1 rejects the request with 401 and revokes the active session cookie.');
+    } else if (body.attachmentType === 'har' || attachLower.includes('.har')) {
+      reproductionSteps.push('Load the application environment matching the captured HAR trace.');
+      reproductionSteps.push('Replay the sequence of HTTP transactions leading up to the failed network call.');
+      reproductionSteps.push('Check headers for authorization token rotation or missing idempotency nonces.');
+      reproductionSteps.push('Verify whether client handles non-200 responses with graceful user messaging.');
+    } else if (body.attachmentType === 'log' || attachLower.includes('.log')) {
+      reproductionSteps.push('Locate the entry point referenced in the top stack trace frame.');
+      reproductionSteps.push('Simulate the triggering input conditions in a local integration environment.');
+      reproductionSteps.push('Verify unhandled exception boundary catch and state restoration.');
     } else {
       reproductionSteps.push('Log in and navigate to the affected view with standard permissions.');
       reproductionSteps.push(`Perform primary trigger action: "${rawText.slice(0, 75)}..."`);
@@ -131,6 +162,9 @@ export async function POST(request: NextRequest) {
     } else if (lower.includes('logout') || lower.includes('logged out') || lower.includes('401')) {
       expectedResult = 'Cart checkout handles token refresh idempotently across tabs without logging out.';
       actualResult = 'Authentication token was invalidated prematurely by token rotation race, redirecting to /login.';
+    } else if (body.attachmentType === 'har') {
+      expectedResult = 'All asynchronous requests in the workflow complete with valid 2xx status codes and state integrity.';
+      actualResult = 'Network trace displays unhandled 4xx/5xx status code or premature request termination.';
     }
 
     // 5. Build summary
