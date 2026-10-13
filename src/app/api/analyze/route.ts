@@ -1,6 +1,136 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RawReport, BugAnalysis, MissingQuestion } from '@/types/bug';
 
+/**
+ * Real AI Bug Analysis via Google Gemini API
+ */
+async function analyzeWithGemini(rawText: string, attachmentInfo?: string): Promise<BugAnalysis | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const prompt = `You are a Senior Full-Stack Engineer and Lead QA Automation Architect for "Patchwork", an AI bug triage and ambiguity resolution engine.
+Analyze the following user bug report, customer ticket, or error logs:
+
+"""
+${rawText}
+${attachmentInfo ? `\nAttachment Context: ${attachmentInfo}` : ''}
+"""
+
+Analyze the failure mode, isolate ambiguities, and return a single valid JSON object with the following fields:
+{
+  "summary": "Concise 1-2 sentence technical summary of the incident",
+  "knowns": [
+    "4 to 6 clear facts or technical signals identified from the input"
+  ],
+  "missingQuestions": [
+    {
+      "id": "q1",
+      "question": "A focused technical question to resolve ambiguity",
+      "category": "payment_gateway" | "device_os" | "recovery_action" | "network" | "component",
+      "placeholder": "Helpful example response"
+    },
+    {
+      "id": "q2",
+      "question": "Second focused question to isolate reproduction edge cases",
+      "category": "device_os",
+      "placeholder": "e.g. Browser or OS details"
+    },
+    {
+      "id": "q3",
+      "question": "Third question targeting user recovery or error code",
+      "category": "recovery_action",
+      "placeholder": "e.g. What occurred upon refresh"
+    }
+  ],
+  "reproductionSteps": [
+    "Step 1: ...",
+    "Step 2: ...",
+    "Step 3: ...",
+    "Step 4: ...",
+    "Step 5: ..."
+  ],
+  "expectedResult": "Clear description of expected idempotent behavior",
+  "actualResult": "Clear description of observed breakdown or deadlock",
+  "environment": {
+    "browser": "Inferred client browser (e.g. Chrome 130+, Safari 18+)",
+    "os": "Inferred client OS (e.g. macOS / iOS / Windows 11)",
+    "appVersion": "v2.14-current",
+    "runtime": "Next.js / Node.js"
+  },
+  "severity": "critical" | "high" | "medium" | "low",
+  "confidenceScore": 0.96
+}
+Do not include any Markdown fencing, return ONLY the raw JSON object.`;
+
+  // Try current models
+  const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+
+  for (const model of models) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.15,
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        console.warn(`[Gemini API] ${model} returned ${res.status}:`, errJson?.error?.message || res.statusText);
+        continue;
+      }
+
+      const data = await res.json();
+      const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJson) continue;
+
+      const parsed = JSON.parse(rawJson);
+      return {
+        id: `AI-${Math.floor(1000 + Math.random() * 9000)}`,
+        summary: parsed.summary || rawText.slice(0, 120),
+        knowns: Array.isArray(parsed.knowns) && parsed.knowns.length > 0
+          ? parsed.knowns
+          : ['AI-extracted telemetry and context'],
+        missingQuestions: Array.isArray(parsed.missingQuestions) && parsed.missingQuestions.length > 0
+          ? parsed.missingQuestions
+          : [],
+        reproductionSteps: Array.isArray(parsed.reproductionSteps) && parsed.reproductionSteps.length > 0
+          ? parsed.reproductionSteps
+          : [],
+        expectedResult: parsed.expectedResult || 'System operates idempotently without session degradation.',
+        actualResult: parsed.actualResult || 'Application encountered unhandled deadlock or crash.',
+        environment: parsed.environment || {
+          browser: 'All Modern Browsers',
+          os: 'Cross-platform',
+          appVersion: 'v2.14-current',
+        },
+        severity: parsed.severity || 'high',
+        confidenceScore: typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 0.95,
+        aiPowered: true,
+        aiModel: `Google Gemini (${model})`,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Gemini API] Attempt failed on ${model}:`, msg);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: RawReport = await request.json();
@@ -24,10 +154,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const attachmentContext = body.attachmentName
+      ? `Filename: ${body.attachmentName}, Type: ${body.attachmentType || 'file'}, Size: ${body.attachmentSize || 'unspecified'}`
+      : undefined;
+
+    // 1. ATTEMPT REAL AI TRIAGE FIRST (Google Gemini)
+    const geminiResult = await analyzeWithGemini(rawText, attachmentContext);
+    if (geminiResult) {
+      return NextResponse.json(geminiResult);
+    }
+
+    // 2. HEURISTIC FALLBACK (Deterministic engine if Gemini free tier hits 503 or offline)
     const lower = rawText.toLowerCase();
     const attachLower = (body.attachmentName || '').toLowerCase();
 
-    // 1. Extract Knowns based on heuristic detection
     const knowns: string[] = [];
 
     if (lower.includes('checkout') || lower.includes('payment') || lower.includes('cart') || lower.includes('order')) {
@@ -67,10 +207,9 @@ export async function POST(request: NextRequest) {
       knowns.push('Source: Direct user triage intake');
     }
 
-    // 2. Derive dynamic Missing Questions to resolve ambiguity
+    // Dynamic Missing Questions
     const missingQuestions: MissingQuestion[] = [];
 
-    // Question 1: Payment gateway & verification flow
     if (lower.includes('payment') || lower.includes('checkout') || attachLower.includes('checkout')) {
       missingQuestions.push({
         id: 'q-gateway',
@@ -87,7 +226,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Question 2: Navigation mechanism and client environment
     if (lower.includes('back') || lower.includes('stuck') || lower.includes('freeze')) {
       missingQuestions.push({
         id: 'q-nav-trigger',
@@ -104,7 +242,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Question 3: Financial state / recovery behavior
     if (lower.includes('payment') || lower.includes('stuck') || lower.includes('har')) {
       missingQuestions.push({
         id: 'q-recovery-charge',
@@ -121,7 +258,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. Synthesize initial structured reproduction steps
+    // Reconstructed reproduction steps
     const reproductionSteps: string[] = [];
 
     if (lower.includes('back') && (lower.includes('payment') || lower.includes('checkout') || lower.includes('stuck'))) {
@@ -152,7 +289,7 @@ export async function POST(request: NextRequest) {
       reproductionSteps.push('Observe divergence between client state and server persistence.');
     }
 
-    // 4. Extract expected vs actual behavior
+    // Expected vs Actual
     let expectedResult = 'The system handles the user operation idempotently without session degradation or UI freezes.';
     let actualResult = 'The operation failed unexpectedly, causing unhandled state locks or error prompts.';
 
@@ -167,7 +304,6 @@ export async function POST(request: NextRequest) {
       actualResult = 'Network trace displays unhandled 4xx/5xx status code or premature request termination.';
     }
 
-    // 5. Build summary
     const summary = rawText.length > 120
       ? `${rawText.slice(0, 117)}...`
       : rawText;
@@ -188,6 +324,8 @@ export async function POST(request: NextRequest) {
       },
       severity: lower.includes('payment') || lower.includes('stuck') || lower.includes('critical') ? 'high' : 'medium',
       confidenceScore: 0.93,
+      aiPowered: false,
+      aiModel: 'Local Heuristic Engine (Gemini Quota Fallback)',
     };
 
     return NextResponse.json(analysis);

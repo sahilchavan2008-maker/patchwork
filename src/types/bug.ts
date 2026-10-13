@@ -33,6 +33,8 @@ export interface BugAnalysis {
   };
   severity?: 'critical' | 'high' | 'medium' | 'low';
   confidenceScore?: number;
+  aiPowered?: boolean;
+  aiModel?: string;
 }
 
 export interface ClarificationSubmission {

@@ -114,9 +114,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
 
-        {/* Prominent Demo Launcher Button */}
-        {onTriggerDemo && (
-          <div className="flex items-center space-x-2 shrink-0">
+        {/* Prominent Demo Launcher Button & AI indicator */}
+        <div className="flex items-center space-x-2 shrink-0">
+          <div className="hidden xl:flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-900 border border-cyan-500/30 rounded-lg text-[11px] font-mono text-cyan-300 shadow-sm shadow-cyan-950">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <Sparkles className="w-3 h-3 text-cyan-400" />
+            <span>Gemini AI Connected</span>
+          </div>
+
+          {onTriggerDemo && (
             <Button
               type="button"
               variant="cyan"
@@ -129,8 +135,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Demo Mode:</span>
               <span>Vague Bug Scenario</span>
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </header>
   );

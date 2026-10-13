@@ -91,6 +91,16 @@ export const ClarificationForm: React.FC<ClarificationFormProps> = ({
             <Badge variant="indigo" size="sm">
               {analysis.id || 'ANL-ACTIVE'}
             </Badge>
+            {analysis.aiPowered ? (
+              <Badge variant="cyan" size="sm" className="border-cyan-400 shadow-sm shadow-cyan-950 font-bold">
+                <Sparkles className="w-3 h-3 mr-1 text-cyan-400" />
+                {analysis.aiModel || 'Gemini AI'}
+              </Badge>
+            ) : (
+              <Badge variant="slate" size="sm">
+                {analysis.aiModel || 'Deterministic Engine'}
+              </Badge>
+            )}
             {analysis.severity && (
               <Badge
                 variant={

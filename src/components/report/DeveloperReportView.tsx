@@ -217,6 +217,12 @@ describe('Payment Navigation State Machine & Idempotency', () => {
             <Badge variant="indigo" size="sm">
               {analysis?.id || report.reportNumber}
             </Badge>
+            {analysis?.aiPowered && (
+              <Badge variant="cyan" size="sm" className="border-cyan-400 font-bold">
+                <Sparkles className="w-3 h-3 mr-1 text-cyan-400" />
+                {analysis.aiModel || 'Gemini AI'}
+              </Badge>
+            )}
             {rawReport?.attachmentName && (
               <Badge variant="slate" size="sm">
                 Attachment: {rawReport.attachmentName}
