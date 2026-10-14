@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { initialMockDeveloperReport } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
+import { LiveTestRunner } from '@/components/report/LiveTestRunner';
 
 export interface DeveloperReportViewProps {
   report?: DeveloperReport;
@@ -30,7 +31,7 @@ export interface DeveloperReportViewProps {
   onBackToClarification?: () => void;
 }
 
-type ScriptTab = 'markdown' | 'playwright' | 'jest' | 'diff';
+type ScriptTab = 'markdown' | 'playwright' | 'jest' | 'runner' | 'diff';
 
 export const DeveloperReportView: React.FC<DeveloperReportViewProps> = ({
   report = initialMockDeveloperReport,
@@ -316,6 +317,20 @@ describe('Payment Navigation State Machine & Idempotency', () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('runner')}
+          className={cn(
+            'flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all',
+            activeTab === 'runner'
+              ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          )}
+        >
+          <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Live Sandbox Runner</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+        </button>
+
+        <button
           onClick={() => setActiveTab('diff')}
           className={cn(
             'flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all',
@@ -377,23 +392,34 @@ describe('Payment Navigation State Machine & Idempotency', () => {
                 Automated Playwright Reproduction Script
               </h3>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleCopy(playwrightScript, 'playwright')}
-            >
-              {copiedSection === 'playwright' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Playwright Test</span>
-                </>
-              )}
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="cyan"
+                size="sm"
+                onClick={() => setActiveTab('runner')}
+                className="text-xs font-bold text-slate-950"
+              >
+                <Terminal className="w-3.5 h-3.5 mr-1" />
+                <span>Execute in Runner &rarr;</span>
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleCopy(playwrightScript, 'playwright')}
+              >
+                {copiedSection === 'playwright' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Script</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-emerald-300 overflow-x-auto leading-relaxed">
@@ -413,23 +439,34 @@ describe('Payment Navigation State Machine & Idempotency', () => {
                 Jest / Vitest Integration Test
               </h3>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleCopy(jestScript, 'jest')}
-            >
-              {copiedSection === 'jest' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Jest Test</span>
-                </>
-              )}
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="cyan"
+                size="sm"
+                onClick={() => setActiveTab('runner')}
+                className="text-xs font-bold text-slate-950"
+              >
+                <Terminal className="w-3.5 h-3.5 mr-1" />
+                <span>Execute in Runner &rarr;</span>
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleCopy(jestScript, 'jest')}
+              >
+                {copiedSection === 'jest' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Script</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-cyan-300 overflow-x-auto leading-relaxed">
@@ -439,7 +476,15 @@ describe('Payment Navigation State Machine & Idempotency', () => {
         </Card>
       )}
 
-      {/* Tab 4: Fix Diff & Blueprint */}
+      {/* Tab 4: Live Sandbox Runner */}
+      {activeTab === 'runner' && (
+        <LiveTestRunner
+          testType="playwright"
+          bugTitle={analysis?.summary || report.executiveSummary}
+        />
+      )}
+
+      {/* Tab 5: Fix Diff & Blueprint */}
       {activeTab === 'diff' && (
         <Card>
           <CardHeader>
