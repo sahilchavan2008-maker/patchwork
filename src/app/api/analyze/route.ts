@@ -131,8 +131,34 @@ Do not include any Markdown fencing, return ONLY the raw JSON object.`;
   return null;
 }
 
+import { checkRateLimit } from '@/lib/rate-limit';
+import { sanitizeBugInput } from '@/lib/security';
+
 export async function POST(request: NextRequest) {
   try {
+    // 0. Extract Client IP and Enforce Rate Limiting (Prevent API abuse / Wallet drainage)
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '127.0.0.1';
+    
+    const rateCheck = checkRateLimit(clientIp, 10, 60 * 1000); // 10 requests per minute
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        {
+          error: 'Rate limit exceeded. Too many analysis requests from your IP. Please wait a minute before trying again.',
+          reset: rateCheck.reset,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': '60',
+            'X-RateLimit-Limit': String(rateCheck.limit),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': String(rateCheck.reset),
+          },
+        }
+      );
+    }
+
     const body: RawReport = await request.json();
     let rawText = body.rawText ? body.rawText.trim() : '';
 
@@ -153,6 +179,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 1. Sanitize Input & Defend against Prompt Injection
+    const sanitization = sanitizeBugInput(rawText);
+    if (!sanitization.isValid) {
+      return NextResponse.json(
+        { error: sanitization.threatDetected || 'Invalid payload rejected by security filter.' },
+        { status: 400 }
+      );
+    }
+    rawText = sanitization.sanitizedText;
 
     const attachmentContext = body.attachmentName
       ? `Filename: ${body.attachmentName}, Type: ${body.attachmentType || 'file'}, Size: ${body.attachmentSize || 'unspecified'}`

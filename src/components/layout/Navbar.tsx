@@ -3,8 +3,19 @@
 import React from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Bug, Sparkles, FileCode2, Layers, Play } from 'lucide-react';
+import {
+  Bug,
+  Sparkles,
+  FileCode2,
+  Layers,
+  Play,
+  ShieldCheck,
+  User,
+  LogOut,
+  Lock,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { UserProfile } from '@/types/auth';
 
 export type WorkflowStep = 'intake' | 'clarification' | 'report';
 
@@ -15,6 +26,9 @@ interface NavbarProps {
   isReportReady?: boolean;
   onTriggerDemo?: () => void;
   isDemoLoading?: boolean;
+  currentUser?: UserProfile | null;
+  onOpenAuthModal?: () => void;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -24,6 +38,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   isReportReady = false,
   onTriggerDemo,
   isDemoLoading = false,
+  currentUser,
+  onOpenAuthModal,
+  onLogout,
 }) => {
   const steps = [
     {
@@ -63,11 +80,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 patch<span className="text-cyan-400">work</span>
               </span>
               <Badge variant="indigo" size="sm">
-                v1.0
+                v1.2 Secure
               </Badge>
             </div>
             <p className="text-[11px] text-slate-400 font-mono hidden md:block">
-              AI Bug Clarification & Packet Engine
+              AI Bug Clarification & Hardened AppSec Workbench
             </p>
           </div>
         </div>
@@ -114,14 +131,61 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
 
-        {/* Prominent Demo Launcher Button & AI indicator */}
+        {/* Action Controls & Auth User Pill */}
         <div className="flex items-center space-x-2 shrink-0">
-          <div className="hidden xl:flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-900 border border-cyan-500/30 rounded-lg text-[11px] font-mono text-cyan-300 shadow-sm shadow-cyan-950">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            <Sparkles className="w-3 h-3 text-cyan-400" />
-            <span>Gemini AI Connected</span>
-          </div>
+          {/* Security Shield & Matrix inspector */}
+          <button
+            type="button"
+            onClick={onOpenAuthModal}
+            title="Inspect AppSec Shield & Rate Limit Matrix"
+            className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 border border-emerald-500/40 rounded-lg text-xs font-mono text-emerald-300 shadow-sm transition-colors"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden xl:inline">AppSec Shield</span>
+          </button>
 
+          {/* User Profile / Auth Gate */}
+          {currentUser ? (
+            <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 p-1 pl-2.5 rounded-xl text-xs">
+              <div className="flex items-center space-x-2">
+                <div className="w-6 h-6 rounded-md bg-indigo-600 text-white font-mono font-bold flex items-center justify-center text-[10px]">
+                  {currentUser.avatarInitials}
+                </div>
+                <div className="hidden lg:block text-left">
+                  <div className="text-[11px] font-bold text-slate-100 leading-tight">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[9px] text-cyan-400 font-mono capitalize">
+                    {currentUser.role.replace('_', ' ')}
+                  </div>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sign out session"
+                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onOpenAuthModal}
+              className="text-xs font-bold"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </Button>
+          )}
+
+          {/* Demo Button */}
           {onTriggerDemo && (
             <Button
               type="button"
@@ -129,11 +193,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               size="sm"
               onClick={onTriggerDemo}
               isLoading={isDemoLoading}
-              className="font-bold border border-cyan-300/40 shadow-md shadow-cyan-500/30 text-xs px-3.5 py-2 flex items-center gap-1.5"
+              className="font-bold border border-cyan-300/40 shadow-md shadow-cyan-500/30 text-xs px-3 py-1.5 flex items-center gap-1.5"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span className="hidden sm:inline">Demo Mode:</span>
-              <span>Vague Bug Scenario</span>
+              <span className="hidden sm:inline">Demo Mode</span>
             </Button>
           )}
         </div>
