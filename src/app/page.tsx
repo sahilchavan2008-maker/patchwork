@@ -13,10 +13,13 @@ import { Play, Lock, ShieldCheck, Key, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardContent } from '@/components/ui/Card';
 import { useAuth } from '@/context/AuthContext';
+import { SavedTicketsDrawer } from '@/components/tickets/SavedTicketsDrawer';
+import { SavedTicket } from '@/lib/firestore';
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('intake');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSavedTicketsOpen, setIsSavedTicketsOpen] = useState(false);
   const { user, loading } = useAuth();
 
   const [rawReport, setRawReport] = useState<RawReport | null>(null);
@@ -104,6 +107,22 @@ export default function Home() {
     }, 600);
   };
 
+  const handleLoadSavedTicket = (ticket: SavedTicket) => {
+    if (ticket.analysis) {
+      setAnalysis(ticket.analysis);
+    }
+    if (ticket.answers) {
+      setClarifiedAnswers(ticket.answers);
+    }
+    setDeveloperReport((prev) => ({
+      ...prev,
+      executiveSummary: ticket.summary,
+      severity: ticket.severity,
+      verifiedSteps: ticket.analysis?.reproductionSteps || prev.verifiedSteps,
+    }));
+    setCurrentStep('report');
+  };
+
   const pendingQuestionsCount = analysis
     ? analysis.missingQuestions.filter(
         (q) => !clarifiedAnswers[q.id] && (!q.answer || q.answer.trim().length === 0)
@@ -120,12 +139,20 @@ export default function Home() {
         onTriggerDemo={handleTriggerVagueBugDemo}
         isDemoLoading={isAnalyzing}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onOpenSavedTickets={() => setIsSavedTicketsOpen(true)}
       />
 
       {/* Firebase Auth Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      {/* Saved Jira Tickets & Test Suites Drawer */}
+      <SavedTicketsDrawer
+        isOpen={isSavedTicketsOpen}
+        onClose={() => setIsSavedTicketsOpen(false)}
+        onLoadTicket={handleLoadSavedTicket}
       />
 
       {/* Top AppSec & Demo Callout Bar */}
@@ -263,6 +290,7 @@ export default function Home() {
                 answers={clarifiedAnswers}
                 rawReport={rawReport || undefined}
                 onBackToClarification={() => setCurrentStep('clarification')}
+                onOpenSavedTickets={() => setIsSavedTicketsOpen(true)}
               />
             )}
           </>

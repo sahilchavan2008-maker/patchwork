@@ -13,6 +13,7 @@ import {
   User as UserIcon,
   LogOut,
   Lock,
+  Bookmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -27,6 +28,7 @@ interface NavbarProps {
   onTriggerDemo?: () => void;
   isDemoLoading?: boolean;
   onOpenAuthModal?: () => void;
+  onOpenSavedTickets?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTriggerDemo,
   isDemoLoading = false,
   onOpenAuthModal,
+  onOpenSavedTickets,
 }) => {
   const { user, logout } = useAuth();
   const [imageError, setImageError] = React.useState(false);
@@ -162,6 +165,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>Firebase Protected</span>
           </button>
+
+          {/* Saved Tickets Button (when authenticated) */}
+          {user && onOpenSavedTickets && (
+            <button
+              type="button"
+              onClick={onOpenSavedTickets}
+              title="Open Saved Jira Tickets & Test Suites"
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-750 hover:border-cyan-500/50 rounded-lg text-xs font-mono text-cyan-300 shadow-sm transition-all"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden md:inline">Saved Tickets</span>
+            </button>
+          )}
 
           {/* User Profile / Auth State */}
           {user ? (

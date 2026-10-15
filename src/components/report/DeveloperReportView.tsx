@@ -18,10 +18,14 @@ import {
   RotateCcw,
   Sparkles,
   GitBranch,
+  Bookmark,
+  Cloud,
 } from 'lucide-react';
 import { initialMockDeveloperReport } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
 import { LiveTestRunner } from '@/components/report/LiveTestRunner';
+import { useAuth } from '@/context/AuthContext';
+import { saveTicket } from '@/lib/firestore';
 
 export interface DeveloperReportViewProps {
   report?: DeveloperReport;
@@ -29,6 +33,7 @@ export interface DeveloperReportViewProps {
   answers?: Record<string, string>;
   rawReport?: RawReport;
   onBackToClarification?: () => void;
+  onOpenSavedTickets?: () => void;
 }
 
 type ScriptTab = 'markdown' | 'playwright' | 'jest' | 'runner' | 'diff';
@@ -39,10 +44,14 @@ export const DeveloperReportView: React.FC<DeveloperReportViewProps> = ({
   answers = {},
   rawReport,
   onBackToClarification,
+  onOpenSavedTickets,
 }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<ScriptTab>('markdown');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [checklist, setChecklist] = useState(() => report.developerActionChecklist);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Generate resolved clarification strings
   const resolvedClarifications = useMemo(() => {
@@ -115,9 +124,144 @@ ${steps}
 
   // Generate automated Playwright E2E test script
   const playwrightScript = useMemo(() => {
-    const isBackNav = (analysis?.summary || '').toLowerCase().includes('back');
+    const summary = (analysis?.summary || report.executiveSummary || '').toLowerCase();
     const bugId = analysis?.id || 'BUG-REPRO';
+    const isCors = summary.includes('cors') || summary.includes('preflight') || summary.includes('cross-origin');
+    const isAuth = summary.includes('auth') || summary.includes('401') || summary.includes('token') || summary.includes('session');
+    const isMemory = summary.includes('memory') || summary.includes('leak') || summary.includes('re-render');
+    const isTimeout = summary.includes('504') || summary.includes('timeout') || summary.includes('gateway');
+    const isBackNav = summary.includes('back') || summary.includes('popstate') || summary.includes('navigation');
 
+    if (isCors) {
+      return `// tests/repro-${bugId.toLowerCase()}.spec.ts
+import { test, expect } from '@playwright/test';
+
+/**
+ * Reproduction Test: Cross-Origin Resource Sharing (CORS) Preflight Handshake
+ * Incident: ${analysis?.summary || report.executiveSummary}
+ */
+test('verify: preflight OPTIONS response permits origin and custom headers', async ({ request }) => {
+  // 1. Dispatch preflight OPTIONS request with requested headers
+  const response = await request.fetch('/api/v2/resource', {
+    method: 'OPTIONS',
+    headers: {
+      'Origin': 'https://app.example.com',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'Authorization, Content-Type, X-Client-Version',
+    },
+  });
+
+  // 2. Assert: Gateway must return 204 No Content or 200 OK
+  expect([200, 204]).toContain(response.status());
+
+  // 3. Assert: Response contains strict CORS headers
+  const headers = response.headers();
+  expect(headers['access-control-allow-origin']).toBe('https://app.example.com');
+  expect(headers['access-control-allow-credentials']).toBe('true');
+  expect(headers['access-control-allow-headers']).toContain('Authorization');
+});`;
+    }
+
+    if (isAuth) {
+      return `// tests/repro-${bugId.toLowerCase()}.spec.ts
+import { test, expect } from '@playwright/test';
+
+/**
+ * Reproduction Test: Multi-Tab Token Rotation Concurrency
+ * Incident: ${analysis?.summary || report.executiveSummary}
+ */
+test('reproduce: verify parallel refresh requests do not nuke active session', async ({ browser }) => {
+  const context = await browser.newContext();
+  const pageA = await context.newPage();
+  const pageB = await context.newPage();
+
+  // 1. Navigate both tabs with active authenticated session
+  await pageA.goto('/dashboard');
+  await pageB.goto('/dashboard');
+
+  // 2. Trigger simultaneous token renewal in both tabs within 100ms
+  await Promise.all([
+    pageA.evaluate(() => fetch('/api/auth/refresh', { method: 'POST' })),
+    pageB.evaluate(() => fetch('/api/auth/refresh', { method: 'POST' })),
+  ]);
+
+  // 3. Assert: Neither tab was redirected to login with 401
+  await expect(pageA).not.toHaveURL(/\\/login/);
+  await expect(pageB).not.toHaveURL(/\\/login/);
+
+  // 4. Verify session cookie integrity
+  const cookies = await context.cookies();
+  const sessionCookie = cookies.find((c) => c.name === 'session_token');
+  expect(sessionCookie).toBeDefined();
+});`;
+    }
+
+    if (isMemory) {
+      return `// tests/repro-${bugId.toLowerCase()}.spec.ts
+import { test, expect } from '@playwright/test';
+
+/**
+ * Reproduction Test: Unbounded Component Re-render & Heap Saturation
+ * Incident: ${analysis?.summary || report.executiveSummary}
+ */
+test('reproduce: verify component memory remains bounded under repeated state updates', async ({ page }) => {
+  await page.goto('/dashboard');
+
+  // 1. Capture initial JS heap usage
+  const initialMetrics = await page.evaluate(() => (performance as any).memory?.usedJSHeapSize || 0);
+
+  // 2. Rapidly toggle filter state 50 times
+  for (let i = 0; i < 50; i++) {
+    await page.click('[data-testid="filter-toggle-btn"]');
+    await page.waitForTimeout(20);
+  }
+
+  // 3. Assert: Main thread responsive, no "Maximum update depth" crash dialog
+  const errorBoundary = page.locator('[data-testid="react-error-boundary"]');
+  await expect(errorBoundary).not.toBeVisible();
+
+  // 4. Assert: Heap delta within 15MB tolerance
+  const finalMetrics = await page.evaluate(() => (performance as any).memory?.usedJSHeapSize || 0);
+  if (initialMetrics > 0 && finalMetrics > 0) {
+    const deltaMB = (finalMetrics - initialMetrics) / (1024 * 1024);
+    expect(deltaMB).toBeLessThan(15);
+  }
+});`;
+    }
+
+    if (isTimeout) {
+      return `// tests/repro-${bugId.toLowerCase()}.spec.ts
+import { test, expect } from '@playwright/test';
+
+/**
+ * Reproduction Test: 504 Gateway Timeout Recovery & Circuit Breaker
+ * Incident: ${analysis?.summary || report.executiveSummary}
+ */
+test('verify: client recovers gracefully when reverse proxy responds with 504', async ({ page }) => {
+  // 1. Mock 504 Gateway Timeout on target API
+  await page.route('/api/v2/process-data', (route) => {
+    route.fulfill({
+      status: 504,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Gateway Timeout: upstream service slow' }),
+    });
+  });
+
+  await page.goto('/reports');
+  await page.click('#generate-report-btn');
+
+  // 2. Assert: UI displays actionable retry notification, not blank screen
+  const errorBanner = page.locator('[data-testid="gateway-timeout-banner"]');
+  await expect(errorBanner).toBeVisible();
+  await expect(errorBanner).toContainText('Connection timed out. Click to retry.');
+
+  // 3. Verify action button remains enabled for manual retry
+  const retryBtn = page.locator('#retry-action-btn');
+  await expect(retryBtn).toBeEnabled();
+});`;
+    }
+
+    // Default: Back navigation and payment flow test
     return `// tests/repro-${bugId.toLowerCase()}.spec.ts
 import { test, expect } from '@playwright/test';
 
@@ -148,10 +292,10 @@ test('reproduce: verify post-payment navigation stability without deadlock', asy
   await expect(page).toHaveURL(/(\\/orders\\/confirmation|\\/checkout\\/status)/);
   const statusBanner = page.locator('[data-testid="order-status-banner"]');
   await expect(statusBanner).toBeVisible();`
-      : `// 3. Act: Concurrently dispatch order confirmation
+      : `// 3. Act: Dispatch confirmation action
   await page.click('#confirm-order-btn');
 
-  // 4. Assert: No 401 unhandled logout redirect
+  // 4. Assert: No unhandled 401 redirect or UI crash
   await expect(page).not.toHaveURL(/\\/login/);`
   }
 });`;
@@ -159,11 +303,76 @@ test('reproduce: verify post-payment navigation stability without deadlock', asy
 
   // Generate automated Jest / Unit test script
   const jestScript = useMemo(() => {
+    const summary = (analysis?.summary || report.executiveSummary || '').toLowerCase();
     const bugId = analysis?.id || 'PW-UNIT';
+    const isCors = summary.includes('cors') || summary.includes('preflight');
+    const isAuth = summary.includes('auth') || summary.includes('401') || summary.includes('token');
+
+    if (isCors) {
+      return `// tests/unit/${bugId.toLowerCase()}.test.ts
+import { corsMiddleware } from '@/server/middleware/cors';
+
+describe('CORS Preflight & Origin Validation Middleware', () => {
+  it('should allow whitelisted origin with credentials in preflight OPTIONS', async () => {
+    const mockRequest = new Request('https://api.example.com/v2/items', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://app.example.com',
+        'access-control-request-method': 'POST',
+      },
+    });
+
+    const response = await corsMiddleware(mockRequest);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://app.example.com');
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  it('should reject unauthorized cross-origin requests without headers', async () => {
+    const mockRequest = new Request('https://api.example.com/v2/items', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://malicious-site.com' },
+    });
+
+    const response = await corsMiddleware(mockRequest);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});`;
+    }
+
+    if (isAuth) {
+      return `// tests/unit/${bugId.toLowerCase()}.test.ts
+import { verifyAndRotateRefreshToken } from '@/server/auth/tokenService';
+
+describe('Auth Token Rotation & Grace Window', () => {
+  it('should allow concurrent requests using retired nonce within 15s grace window', async () => {
+    const userId = 'usr_test_901';
+    const initialNonce = 'nonce_initial_abc';
+
+    // First rotation succeeds
+    const firstRotation = await verifyAndRotateRefreshToken(userId, initialNonce);
+    expect(firstRotation.status).toBe('SUCCESS');
+
+    // Concurrent request presenting superseded nonce within grace window (e.g. 500ms)
+    const concurrentRotation = await verifyAndRotateRefreshToken(userId, initialNonce, { elapsedMs: 500 });
+    expect(concurrentRotation.status).toBe('GRACE_PERIOD_ACTIVE');
+    expect(concurrentRotation.isSessionRevoked).toBe(false);
+  });
+
+  it('should strictly nuke session family if nonce reused after 15s expiration', async () => {
+    const userId = 'usr_test_901';
+    const staleNonce = 'nonce_old_xyz';
+
+    const replayAttempt = await verifyAndRotateRefreshToken(userId, staleNonce, { elapsedMs: 16000 });
+    expect(replayAttempt.isSessionRevoked).toBe(true);
+  });
+});`;
+    }
+
     return `// tests/unit/${bugId.toLowerCase()}.test.ts
 import { handlePaymentStateTransition } from '@/features/checkout/stateMachine';
 
-describe('Payment Navigation State Machine & Idempotency', () => {
+describe('State Machine & Idempotency Transition Guard', () => {
   it('should prevent deadlock when popstate navigation occurs post-payment intent', async () => {
     const currentState = {
       status: 'PAYMENT_INTENT_RESOLVED',
@@ -190,7 +399,7 @@ describe('Payment Navigation State Machine & Idempotency', () => {
     expect(isTokenEvicted).toBe(false);
   });
 });`;
-  }, [analysis]);
+  }, [analysis, report]);
 
   const handleCopy = (text: string, sectionId: string) => {
     navigator.clipboard.writeText(text);
@@ -204,6 +413,42 @@ describe('Payment Navigation State Machine & Idempotency', () => {
         item.id === id ? { ...item, completed: !item.completed } : item
       )
     );
+  };
+
+  const handleSaveTicket = async () => {
+    if (!user) {
+      alert('Please sign in to save tickets to your profile.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const title = analysis?.summary
+        ? (analysis.summary.length > 70 ? `${analysis.summary.slice(0, 67)}...` : analysis.summary)
+        : report.executiveSummary.slice(0, 70);
+
+      await saveTicket({
+        userId: user.uid,
+        userEmail: user.email || undefined,
+        title,
+        summary: analysis?.summary || report.executiveSummary,
+        severity: analysis?.severity || report.severity,
+        analysis,
+        answers,
+        jiraMarkdown: jiraGithubMarkdown,
+        playwrightScript,
+        jestScript,
+        aiModel: analysis?.aiModel,
+        tags: [analysis?.severity || 'bug', 'reproduction-packet'],
+      });
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error saving ticket to Firestore:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -239,37 +484,74 @@ describe('Payment Navigation State Machine & Idempotency', () => {
           </p>
         </div>
 
-        {/* High-Visibility Copy Markdown Action */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+        {/* High-Visibility Actions */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          {/* Save to Firestore Profile */}
           <Button
             type="button"
-            variant="cyan"
-            size="lg"
-            onClick={() => handleCopy(jiraGithubMarkdown, 'top-markdown')}
-            className="shadow-lg shadow-cyan-500/20 font-bold px-5 py-3 text-sm flex items-center justify-center gap-2.5"
+            variant={savedSuccess ? 'primary' : 'secondary'}
+            size="md"
+            isLoading={isSaving}
+            onClick={handleSaveTicket}
+            className="font-bold text-xs px-4 py-2.5 flex items-center justify-center gap-2 border border-slate-700 hover:border-cyan-500/60"
           >
-            {copiedSection === 'top-markdown' ? (
+            {savedSuccess ? (
               <>
-                <Check className="w-4 h-4 text-slate-950" />
-                <span>Copied Markdown to Clipboard!</span>
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-300">Saved to Firestore!</span>
               </>
             ) : (
               <>
-                <Copy className="w-4 h-4 text-slate-950" />
-                <span>Copy Markdown (Jira / GitHub)</span>
+                <Bookmark className="w-4 h-4 text-cyan-400" />
+                <span>Save to Profile</span>
               </>
             )}
           </Button>
 
+          {/* Copy Markdown */}
+          <Button
+            type="button"
+            variant="cyan"
+            size="md"
+            onClick={() => handleCopy(jiraGithubMarkdown, 'top-markdown')}
+            className="shadow-lg shadow-cyan-500/20 font-bold px-4 py-2.5 text-xs flex items-center justify-center gap-2"
+          >
+            {copiedSection === 'top-markdown' ? (
+              <>
+                <Check className="w-4 h-4 text-slate-950" />
+                <span>Copied Markdown!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 text-slate-950" />
+                <span>Copy Jira Markdown</span>
+              </>
+            )}
+          </Button>
+
+          {onOpenSavedTickets && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={onOpenSavedTickets}
+              className="text-xs text-slate-300 hover:text-white"
+            >
+              <Cloud className="w-3.5 h-3.5 mr-1 text-cyan-400" />
+              <span>Saved Tickets</span>
+            </Button>
+          )}
+
           {onBackToClarification && (
             <Button
               type="button"
-              variant="secondary"
+              variant="ghost"
               size="md"
               onClick={onBackToClarification}
+              className="text-xs text-slate-400 hover:text-slate-200"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Back to Clarifications</span>
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              <span>Back</span>
             </Button>
           )}
         </div>

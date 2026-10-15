@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
 /**
  * Strips any stray quotes or whitespace from environment values
@@ -46,15 +47,30 @@ const safeConfig = {
 
 // Safe singleton initialization across Client and Server renders
 let app: FirebaseApp;
-try {
-  app = getApps().length > 0 ? getApp() : initializeApp(safeConfig);
-} catch (error) {
-  console.error('[Firebase] Error initializing Firebase app:', error);
-  app = initializeApp(safeConfig, 'patchwork-fallback-app');
+if (getApps().length > 0) {
+  app = getApp();
+} else {
+  try {
+    app = initializeApp(safeConfig);
+  } catch (error: any) {
+    if (error?.code === 'app/duplicate-app' || (typeof error?.message === 'string' && error.message.includes('already exists'))) {
+      app = getApp();
+    } else {
+      console.error('[Firebase] Error initializing Firebase app:', error);
+      try {
+        app = getApp();
+      } catch {
+        app = initializeApp(safeConfig, 'patchwork-fallback-app');
+      }
+    }
+  }
 }
 
 // Initialize Auth
 export const auth: Auth = getAuth(app);
+
+// Initialize Firestore Database
+export const db: Firestore = getFirestore(app);
 
 // Initialize Google Auth Provider
 export const googleProvider = new GoogleAuthProvider();
