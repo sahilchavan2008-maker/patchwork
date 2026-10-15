@@ -8,28 +8,16 @@ import { DeveloperReportView } from '@/components/report/DeveloperReportView';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { RawReport, BugAnalysis, ClarificationSubmission } from '@/types/bug';
 import { DeveloperReport } from '@/types/analysis';
-import { UserProfile } from '@/types/auth';
 import { initialMockDeveloperReport } from '@/lib/mock-data';
-import { Play, Sparkles, Lock, ShieldCheck, Key } from 'lucide-react';
+import { Play, Lock, ShieldCheck, Key, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader, CardContent } from '@/components/ui/Card';
-
-const INITIAL_USER: UserProfile = {
-  id: 'usr_eng_849',
-  name: 'Alex Rivera',
-  email: 'alex.rivera@patchwork.dev',
-  role: 'lead_engineer',
-  roleTitle: 'Senior Full-Stack Engineer',
-  avatarInitials: 'AR',
-  department: 'Core Platform Engineering',
-  token: 'jwt_sec_token_9841_lead_eng',
-};
+import { useAuth } from '@/context/AuthContext';
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('intake');
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(INITIAL_USER);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const { user, loading } = useAuth();
 
   const [rawReport, setRawReport] = useState<RawReport | null>(null);
   const [analysis, setAnalysis] = useState<BugAnalysis | null>(null);
@@ -131,19 +119,13 @@ export default function Home() {
         isReportReady={!!analysis || currentStep === 'report'}
         onTriggerDemo={handleTriggerVagueBugDemo}
         isDemoLoading={isAnalyzing}
-        currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        onLogout={() => setCurrentUser(null)}
       />
 
-      {/* Auth Modal for Login & AppSec Threat Matrix */}
+      {/* Firebase Auth Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onLogin={(user) => {
-          setCurrentUser(user);
-          setIsAuthModalOpen(false);
-        }}
       />
 
       {/* Top AppSec & Demo Callout Bar */}
@@ -152,7 +134,7 @@ export default function Home() {
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-slate-300">
-              <strong className="text-emerald-400">Security Active:</strong> IP Rate Limiting (10 req/min) &bull; Anti-Prompt Injection &bull; Strict CSP Headers
+              <strong className="text-emerald-400">Firebase Auth Active:</strong> Verified Google & Email sign-in &bull; Real-time session synchronization
             </span>
           </div>
 
@@ -179,8 +161,14 @@ export default function Home() {
           </div>
         )}
 
-        {/* If user logged out, display high-contrast secure access gate */}
-        {!currentUser ? (
+        {/* Loading Skeleton */}
+        {loading ? (
+          <div className="max-w-md mx-auto my-16 text-center space-y-4">
+            <div className="w-10 h-10 mx-auto border-3 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-mono text-slate-400">Verifying Firebase authentication session...</p>
+          </div>
+        ) : !user ? (
+          /* Unauthenticated Lock Gate */
           <div className="max-w-md mx-auto my-12">
             <Card accent="cyan" className="shadow-2xl border-cyan-500/40 text-center">
               <CardHeader className="flex flex-col items-center justify-center pt-8 pb-2">
@@ -188,20 +176,20 @@ export default function Home() {
                   <Lock className="w-6 h-6" />
                 </div>
                 <h3 className="text-lg font-bold text-white">
-                  Patchwork Access Restricted
+                  Firebase Authentication Required
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Authenticate your developer session to access the AI Bug Ingest & Ambiguity Engine.
+                  Please sign in with Google or Email to access the Patchwork developer workbench.
                 </p>
               </CardHeader>
               <CardContent className="p-6 pt-2 space-y-4">
                 <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-300 text-left space-y-1">
                   <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Protected Environment</span>
+                    <span>Secure Access Control</span>
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    Unauthenticated callers cannot invoke Gemini AI API endpoints or submit payloads.
+                    Sign in with your Google account or email to store your bug packets and run real-time triage.
                   </p>
                 </div>
 
@@ -212,13 +200,14 @@ export default function Home() {
                   onClick={() => setIsAuthModalOpen(true)}
                   className="w-full font-bold text-xs"
                 >
-                  <Key className="w-4 h-4 mr-1.5" />
-                  <span>Sign In with Team Passkey</span>
+                  <LogIn className="w-4 h-4 mr-1.5" />
+                  <span>Sign In with Firebase</span>
                 </Button>
               </CardContent>
             </Card>
           </div>
         ) : (
+          /* Authenticated Workflow */
           <>
             {/* Step 1: Intake Form */}
             {currentStep === 'intake' && (
@@ -285,7 +274,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>patchwork &bull; Enterprise Hardened Bug Resolution Engine</span>
           <span className="text-slate-400">
-            Auth Protected &bull; Rate Limited &bull; Prompt Injection Shield Active
+            Firebase Auth Verified &bull; Rate Limited &bull; Prompt Injection Shield Active
           </span>
         </div>
       </footer>

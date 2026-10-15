@@ -10,12 +10,12 @@ import {
   Layers,
   Play,
   ShieldCheck,
-  User,
+  User as UserIcon,
   LogOut,
   Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { UserProfile } from '@/types/auth';
+import { useAuth } from '@/context/AuthContext';
 
 export type WorkflowStep = 'intake' | 'clarification' | 'report';
 
@@ -26,9 +26,7 @@ interface NavbarProps {
   isReportReady?: boolean;
   onTriggerDemo?: () => void;
   isDemoLoading?: boolean;
-  currentUser?: UserProfile | null;
   onOpenAuthModal?: () => void;
-  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -38,10 +36,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   isReportReady = false,
   onTriggerDemo,
   isDemoLoading = false,
-  currentUser,
   onOpenAuthModal,
-  onLogout,
 }) => {
+  const { user, logout } = useAuth();
+
   const steps = [
     {
       id: 'intake' as WorkflowStep,
@@ -64,6 +62,22 @@ export const Navbar: React.FC<NavbarProps> = ({
     },
   ];
 
+  // Helper to extract user initials
+  const getInitials = () => {
+    if (user?.displayName) {
+      return user.displayName
+        .split(' ')
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase();
+    }
+    if (user?.email) {
+      return user.email.slice(0, 2).toUpperCase();
+    }
+    return 'PW';
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-800 bg-slate-950/85 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
@@ -80,11 +94,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 patch<span className="text-cyan-400">work</span>
               </span>
               <Badge variant="indigo" size="sm">
-                v1.2 Secure
+                Firebase Live
               </Badge>
             </div>
             <p className="text-[11px] text-slate-400 font-mono hidden md:block">
-              AI Bug Clarification & Hardened AppSec Workbench
+              AI Bug Clarification & Verified Auth Workbench
             </p>
           </div>
         </div>
@@ -131,46 +145,53 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
 
-        {/* Action Controls & Auth User Pill */}
+        {/* Action Controls & Firebase Auth User Pill */}
         <div className="flex items-center space-x-2 shrink-0">
-          {/* Security Shield & Matrix inspector */}
+          {/* Security Status */}
           <button
             type="button"
             onClick={onOpenAuthModal}
-            title="Inspect AppSec Shield & Rate Limit Matrix"
-            className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 border border-emerald-500/40 rounded-lg text-xs font-mono text-emerald-300 shadow-sm transition-colors"
+            title="Inspect Firebase Auth & AppSec Status"
+            className="hidden xl:flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 border border-emerald-500/40 rounded-lg text-xs font-mono text-emerald-300 shadow-sm transition-colors"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden xl:inline">AppSec Shield</span>
+            <span>Firebase Protected</span>
           </button>
 
-          {/* User Profile / Auth Gate */}
-          {currentUser ? (
+          {/* User Profile / Auth State */}
+          {user ? (
             <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 p-1 pl-2.5 rounded-xl text-xs">
               <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 rounded-md bg-indigo-600 text-white font-mono font-bold flex items-center justify-center text-[10px]">
-                  {currentUser.avatarInitials}
-                </div>
-                <div className="hidden lg:block text-left">
-                  <div className="text-[11px] font-bold text-slate-100 leading-tight">
-                    {currentUser.name}
+                {user.photoURL ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || 'User'}
+                    className="w-6 h-6 rounded-md object-cover border border-slate-700"
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-md bg-indigo-600 text-white font-mono font-bold flex items-center justify-center text-[10px]">
+                    {getInitials()}
                   </div>
-                  <div className="text-[9px] text-cyan-400 font-mono capitalize">
-                    {currentUser.role.replace('_', ' ')}
+                )}
+                <div className="hidden lg:block text-left">
+                  <div className="text-[11px] font-bold text-slate-100 leading-tight max-w-[120px] truncate">
+                    {user.displayName || user.email?.split('@')[0] || 'Authenticated'}
+                  </div>
+                  <div className="text-[9px] text-cyan-400 font-mono truncate max-w-[120px]">
+                    {user.email || 'Firebase User'}
                   </div>
                 </div>
               </div>
 
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="Sign out session"
-                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => logout()}
+                title="Sign Out from Firebase"
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors ml-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
           ) : (
             <Button
@@ -180,7 +201,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={onOpenAuthModal}
               className="text-xs font-bold"
             >
-              <Lock className="w-3.5 h-3.5" />
+              <Lock className="w-3.5 h-3.5 mr-1" />
               <span>Sign In</span>
             </Button>
           )}
