@@ -39,6 +39,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuthModal,
 }) => {
   const { user, logout } = useAuth();
+  const [imageError, setImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [user?.photoURL]);
 
   const steps = [
     {
@@ -162,15 +167,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           {user ? (
             <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 p-1 pl-2.5 rounded-xl text-xs">
               <div className="flex items-center space-x-2">
-                {user.photoURL ? (
+                {user.photoURL && !imageError ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={user.photoURL}
                     alt={user.displayName || 'User'}
-                    className="w-6 h-6 rounded-md object-cover border border-slate-700"
+                    referrerPolicy="no-referrer"
+                    onError={() => setImageError(true)}
+                    className="w-7 h-7 rounded-full object-cover border border-cyan-500/50 shadow-sm"
                   />
                 ) : (
-                  <div className="w-6 h-6 rounded-md bg-indigo-600 text-white font-mono font-bold flex items-center justify-center text-[10px]">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-white font-mono font-bold flex items-center justify-center text-[10px] shadow-sm">
                     {getInitials()}
                   </div>
                 )}
