@@ -23,7 +23,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { loginWithGoogle, loginWithEmail, signUpWithEmail } = useAuth();
+  const { loginWithGoogle, loginWithEmail, signUpWithEmail, loginAsDemo } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,6 +33,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleAuthError = (err: unknown) => {
+    console.error('Firebase Auth Error:', err);
+    const code = (err as { code?: string })?.code;
+    const msg = (err as Error)?.message || '';
+
+    if (code === 'auth/api-key-not-valid' || code === 'auth/invalid-api-key' || msg.includes('api-key-not-valid')) {
+      setError(
+        'Invalid API Key: Google rejected the key in .env.local (AIzaSy...). Please verify your key in Firebase Console → ⚙️ Project Settings → General → "Web API Key" (or under "Your apps" web app snippet), or check Google Cloud Console credentials for restrictions. Alternatively, click "Test Without Firebase" below to bypass.'
+      );
+    } else if (code === 'auth/operation-not-allowed') {
+      setError(
+        'Sign-in provider is disabled in Firebase Console. Enable Email/Password or Google under Authentication → Sign-in method, or use Demo Mode.'
+      );
+    } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+      setError('Invalid email or password. Please check your credentials.');
+    } else if (code === 'auth/email-already-in-use') {
+      setError('This email is already registered. Please sign in instead.');
+    } else if (code === 'auth/weak-password') {
+      setError('Password must be at least 6 characters.');
+    } else if (code === 'auth/invalid-email') {
+      setError('Please enter a valid email address.');
+    } else if (code === 'auth/popup-closed-by-user') {
+      setError('Google sign-in popup was closed before completing.');
+    } else if (code === 'auth/cancelled-popup-request') {
+      setError('Sign-in was cancelled.');
+    } else {
+      setError(msg || 'Authentication failed. Please check your Firebase settings or use Demo Mode.');
+    }
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,19 +87,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         onClose();
       }, 500);
     } catch (err: unknown) {
-      console.error('Firebase Auth Error:', err);
-      const code = (err as { code?: string })?.code;
-      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        setError('Invalid email or password. Please check your credentials.');
-      } else if (code === 'auth/email-already-in-use') {
-        setError('This email is already registered. Please sign in instead.');
-      } else if (code === 'auth/weak-password') {
-        setError('Password must be at least 6 characters.');
-      } else if (code === 'auth/invalid-email') {
-        setError('Please enter a valid email address.');
-      } else {
-        setError((err as Error)?.message || 'Authentication failed. Please try again.');
-      }
+      handleAuthError(err);
     } finally {
       setIsLoading(false);
     }
@@ -87,18 +105,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         onClose();
       }, 500);
     } catch (err: unknown) {
-      console.error('Google Auth Error:', err);
-      const code = (err as { code?: string })?.code;
-      if (code === 'auth/popup-closed-by-user') {
-        setError('Google sign-in popup was closed before completing.');
-      } else if (code === 'auth/cancelled-popup-request') {
-        setError('Sign-in was cancelled.');
-      } else {
-        setError((err as Error)?.message || 'Google sign-in failed. Please try again.');
-      }
+      handleAuthError(err);
     } finally {
       setIsGoogleLoading(false);
     }
+  };
+
+  const handleDemoLogin = () => {
+    loginAsDemo('Lead QA Engineer', 'qa-lead@patchwork.dev');
+    setSuccessMsg('Logged in via Demo Session!');
+    setTimeout(() => {
+      onClose();
+    }, 400);
   };
 
   return (
@@ -269,6 +287,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <span>{mode === 'signin' ? 'Sign In to Session' : 'Create Patchwork Account'}</span>
               </Button>
             </form>
+
+            {/* Local Sandbox / Demo Bypass */}
+            <div className="pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 rounded-lg text-xs font-mono text-slate-300 hover:text-cyan-300 transition-colors"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Test Without Firebase (Demo Mode Bypass)</span>
+              </button>
+            </div>
           </CardContent>
 
           <CardFooter className="flex items-center justify-between bg-slate-950/60 p-4 border-t border-slate-800 text-[11px] text-slate-400 font-mono">
